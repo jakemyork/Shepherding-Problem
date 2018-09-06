@@ -1,0 +1,9 @@
+References?
+https://www.academia.edu/19644093/Automated_Herding_of_Sheep_Using_Artificial_Neural_Networks
+https://ieeexplore.ieee.org/document/7727694/
+https://pdfs.semanticscholar.org/1735/6f494483c49242624ddb6b9d4bbdcbda74b6.pdf
+
+
+
+Something to develop to compare your final result against? 
+https://dl.acm.org/citation.cfm?id=3014668
