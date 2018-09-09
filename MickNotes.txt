@@ -1,3 +1,6 @@
+Learning/courses
+https://github.com/andri27-ts/60_Days_RL_Challenge
+
 References?
 https://www.academia.edu/19644093/Automated_Herding_of_Sheep_Using_Artificial_Neural_Networks
 https://ieeexplore.ieee.org/document/7727694/
