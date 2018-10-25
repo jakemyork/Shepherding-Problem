@@ -1,17 +1,15 @@
 %% This section does all calculation of initial conditions of the simulation
-
+% noiseScalingFactor = 0.3;
 height = 150; % height of arena (y-axis)
 width = 150; % width of arena (x-axis)
 x = 1; % easy for row indexing
 y = 2;
 numSheep = 20; % the number of sheep being simulated
-noiseModifier = 2; % add noise to the inputs of the neural networks
 sheepRadius = 2; % how far the sheep need to be from other sheep to be "comfortable"
 shepherdRadius = 65; % this is how close the shepherd can be before influencing the sheep
 clusterRadius = sheepRadius*numSheep^(2/3); % determining the radius of clustering of the flock
 drivingDistance = sheepRadius*sqrt(numSheep); % distance from GCM to driving position
 circleSize = 20; % for plotting circles
-
 % sheep initially spawn randomly in the upper right quadrant of the arena
 % so they are bound between 0.5 and 1 in both x and y
 outerMod = 1;
@@ -45,15 +43,24 @@ else
     shepherdPos(x) = width*rand(1);
     shepherdPos(y) = (shepOuterMod*height)*rand(1);
 end
+% calculate distance from GCM to the shepherd so we can work out the
+% starting noise characteristic
+initialDistanceGCM(x) = abs(mean(sheepMatrix(:,x))-shepherdPos(x));
+initialDistanceGCM(y) = abs(mean(sheepMatrix(:,y))-shepherdPos(y));
+shepherdInitialDistanceToGCM = norm([initialDistanceGCM(x) initialDistanceGCM(y)]);
+shepherdNewDistanceToGCM = shepherdInitialDistanceToGCM;
+noiseModifier = noiseScalingFactor*shepherdInitialDistanceToGCM;
+% we now initialise the noisy positions of the sheep once
+for s = 1:numSheep
+    sheepMatrixNoisy(s,x) = sheepMatrix(s,x) + (-noiseModifier + (2*noiseModifier)*rand(1));
+    sheepMatrixNoisy(s,y) = sheepMatrix(s,y) + (-noiseModifier + (2*noiseModifier)*rand(1));
+    noisyDifferences(s,x) = sheepMatrix(s,x) - sheepMatrixNoisy(s,x);
+    noisyDifferences(s,y) = sheepMatrix(s,y) - sheepMatrixNoisy(s,y);
+end
 %% This section will calculate all positions and vectors for each time step until the simulation is complete
 for timesteps = 1:1000
-    for i = 1:numSheep
-        sheepMatrixNoisy(i,x) = sheepMatrix(i,x) + (-noiseModifier + (2*noiseModifier)*rand(1));
-        sheepMatrixNoisy(i,y) = sheepMatrix(i,y) + (-noiseModifier + (2*noiseModifier)*rand(1));
-    end
     sheepMatrixReshaped = reshape(sheepMatrixNoisy, [numSheep*2,1]);
     % these values must be reset each time
-    furthestIndex = 0;
     furthestNorm = 0;
     % calculate the GCM of the flock
     [GCMNeural,nil1,nil2] = GCMNetwork(sheepMatrixReshaped,x,y);
@@ -67,11 +74,12 @@ for timesteps = 1:1000
     end
     % do the same for noisy input
     for s = 1:numSheep
-    directionsNoisy(s,x) = sheepMatrixNoisy(s,x) - GCMNeural(x);
-    directionsNoisy(s,y) = sheepMatrixNoisy(s,y) - GCMNeural(y);
+        directionsNoisy(s,x) = sheepMatrixNoisy(s,x) - GCMNeural(x);
+        directionsNoisy(s,y) = sheepMatrixNoisy(s,y) - GCMNeural(y);
     end
     % determine furthest sheep and how far away it is from the GCM
     % here, the calculation must be done on the noisy inputs
+    furthestIndex = 1;
     for s = 1:numSheep
         temp = [directionsNoisy(s,x) directionsNoisy(s,y)];
         norms(s) = norm(temp);
@@ -98,7 +106,6 @@ for timesteps = 1:1000
     isClusteredNeural = round(isClusteredRaw);
     [collectingPosNeural,nil1,nil2] = collectingPosNetwork(collectingInput,x,y);
     collectngPosNeural = reshape(collectingPosNeural,[1,2]);
-    
     [drivingPosNeural,nil1,nil2] = drivingPosNetwork(drivingInput,x,y);
     drivingPosNeural = reshape(drivingPosNeural,[1,2]);
     % recalculate new positions of each sheep and the shepherd based on
@@ -203,6 +210,27 @@ for timesteps = 1:1000
             shepherdPos(y) = shepherdPos(y) + 1.5*shepherdMove(y)/normShepherdMove;
         end
     end
+    %start by updating the noise modifier
+    shepherdOldDistanceToGCM = shepherdNewDistanceToGCM;
+    shepherdNewDistanceToGCM = norm([(shepherdPos(x)-mean(sheepMatrix(:,x))) (shepherdPos(y)-mean(sheepMatrix(:,y)))]);
+    for s = 1:numSheep
+        if shepherdNewDistanceToGCM < 40
+            noisyDifferences(s,x) = shepherdNewDistanceToGCM/shepherdInitialDistanceToGCM*noisyDifferences(s,x);
+            noisyDifferences(s,y) = shepherdNewDistanceToGCM/shepherdInitialDistanceToGCM*noisyDifferences(s,y);
+        else
+            noisyDifferences(s,x) = shepherdNewDistanceToGCM/shepherdOldDistanceToGCM*noisyDifferences(s,x);
+            noisyDifferences(s,y) = shepherdNewDistanceToGCM/shepherdOldDistanceToGCM*noisyDifferences(s,y);
+        end
+    end
+    % then update the noisy positions
+    for s = 1:numSheep
+        sheepMatrixNoisy(s,x) = sheepMatrix(s,x) + noisyDifferences(s,x);
+        sheepMatrixNoisy(s,y) = sheepMatrix(s,y) + noisyDifferences(s,y);
+    end
+    % record the starting level of noise of the inputs
+    if timesteps == 2
+        startingNoise = noiseModifier;
+    end
 %     % plot this timestep
 %     figure(1);
 %     clf('reset');
@@ -215,7 +243,7 @@ for timesteps = 1:1000
 %         hold on; scatter(sheepMatrix(:,x),sheepMatrix(:,y),circleSize,'filled','MarkerFaceColor',[0.2 0.2 0.9]);
 %     if noiseModifier > 0
 %         hold on; scatter(sheepMatrixNoisy(:,x),sheepMatrixNoisy(:,y),circleSize,'MarkerEdgeColor',[0.3 0.3 0.9]);
-%         legend('shepherd','collecting position','driving position','sheep positions','noisy sheep positions');
+%         legend('shepherd','collecting position','driving position','sheep positions','error-applied sheep positions');
 %     else
 %         legend('shepherd','collecting position','driving position','sheep positions');
 %     end
@@ -225,20 +253,10 @@ for timesteps = 1:1000
     if norm([shepherdPos(x) shepherdPos(y)]) < 20 & norm([drivingPosNeural(x) drivingPosNeural(y)]) < 20
         break;
     end
-    % noise modifier scales with distance to GCM ouside a certain distance
-    if norm([(shepherdPos(x)-GCMNeural(x)) (shepherdPos(y)-GCMNeural(y))]) > 40
-        noiseModifier = norm([(shepherdPos(x)-GCMNeural(x)) (shepherdPos(y)-GCMNeural(y))])*noiseScalingFactor;
-    else
-        noiseModifier = 0;
-    end
-    % record the starting level of noise of the inputs
-    if timesteps == 2
-        startingNoise = noiseModifier;
-    end
 end
 % % create the video writer with 1 fps
 % writerObj = VideoWriter('NoisyInputs.avi');
-% writerObj.FrameRate = 10;
+% writerObj.FrameRate = 1;
 % % open the video writercollectingPosNeural
 % open(writerObj);
 % % write the frames to the video

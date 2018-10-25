@@ -1,10 +1,10 @@
 %% This section does all calculation of initial conditions of the simulation
 
-height = 300; % height of arena (y-axis)
-width = 300; % width of arena (x-axis)
+height = 150; % height of arena (y-axis)
+width = 150; % width of arena (x-axis)
 x = 1; % easy for row indexing
 y = 2;
-numSheep = 20; % the number of sheep being simulated
+% numSheep = 395; % the number of sheep being simulated
 sheepRadius = 2; % how far the sheep need to be from other sheep to be "comfortable"
 shepherdRadius = 65; % this is how close the shepherd can be before influencing the sheep
 clusterRadius = sheepRadius*numSheep^(2/3); % determining the radius of clustering of the flock
@@ -20,8 +20,8 @@ innerMod = 0.5;
 shepOuterMod = 0.5;
 
 % initialise variables to blank canvases
-sheepMatrix = zeros(20,2);
-directions = zeros(20,2);
+% sheepMatrix = zeros(20,2);
+% directions = zeros(20,2);
 norms = zeros(1,20);
 temp = zeros(1,2);
 furthestIndex = 0;
@@ -31,6 +31,53 @@ scalingFactorCollect = 0;
 for s = 1:numSheep
     sheepMatrix(s,x) = (outerMod*width - innerMod*width)*rand(1)+ innerMod*width;
     sheepMatrix(s,y) = (outerMod*height - innerMod*height)*rand(1)+ innerMod*height;
+end
+% we now need to expand or compress our input array into exactly 20
+if numSheep == 20
+    fillUpSheepMatrix = sheepMatrix;
+else
+    % if less than 20, we do this by filling the extra spots with averages
+    % of all the other sheep positions
+    if numSheep < 20
+        meanX = mean(sheepMatrix(:,x));
+        meanY = mean(sheepMatrix(:,y));
+        for i = 1:numSheep
+            fillUpSheepMatrix(i,x) = sheepMatrix(i,x);
+            fillUpSheepMatrix(i,y) = sheepMatrix(i,y);
+        end
+        for i = (numSheep + 1):20
+            fillUpSheepMatrix(i,x) = meanX + 10*rand(1);
+            fillUpSheepMatrix(i,y) = meanY + 10*rand(1);
+        end
+    % otherwise if we have more than 20, then
+    else
+        % check up to 400 sheep (this is a lot but just to be safe) - we
+        % don't check 1 because that is less than 20
+        for a = 2:20
+            if numSheep < a*20
+                sheepUpperLimit = a;
+                break;
+            end
+        end
+        % we now have the upper limit in multiples of 20 for the number of
+        % sheep
+        % if numSheep is 38, this will go for i = 1:18
+        for i = 1:(numSheep-(sheepUpperLimit-1)*20)
+            % collect the multiples together
+            for b = 0:(sheepUpperLimit-1)
+                tempSheepPosition((b+1),x) = sheepMatrix((i+b*20),x);
+                tempSheepPosition((b+1),y) = sheepMatrix((i+b*20),y);
+            end
+            % those values averaged become the filled up index values
+            fillUpSheepMatrix(i,x) = mean(tempSheepPosition(:,x));
+            fillUpSheepMatrix(i,y) = mean(tempSheepPosition(:,y));
+        end
+        % and the rest are just single values added in
+        for i = (numSheep-(sheepUpperLimit-1)*20+1):20
+            fillUpSheepMatrix(i,x) = sheepMatrix(i,x);
+            fillUpSheepMatrix(i,y) = sheepMatrix(i,y);
+        end
+    end
 end
 % calculate initial position for the shepherd - here, either the shepherd
 % is bound to the left half of the arena or the bottom half of the arena
@@ -44,9 +91,9 @@ else
     shepherdPos(x) = width*rand(1);
     shepherdPos(y) = (shepOuterMod*height)*rand(1);
 end
-%% This section will calculate all positions and vectors for each time step until the simulation is complete
+%% This section now calculates everything with respect to the filled up matrix
 for timesteps = 1:1000
-    sheepMatrixReshaped = reshape(sheepMatrix, [numSheep*2,1]);
+    sheepMatrixReshaped = reshape(fillUpSheepMatrix, [40,1]);
     % these values must be reset each time
     furthestIndex = 0;
     furthestNorm = 0;
@@ -60,9 +107,13 @@ for timesteps = 1:1000
     directions(s,x) = sheepMatrix(s,x) - GCMNeural(x);
     directions(s,y) = sheepMatrix(s,y) - GCMNeural(y);
     end
+    for s = 1:20
+    directionsFillUp(s,x) = fillUpSheepMatrix(s,x) - GCMNeural(x);
+    directionsFillUp(s,y) = fillUpSheepMatrix(s,y) - GCMNeural(y);
+    end
     % determine furthest sheep and how far away it is from the GCM
-    for s = 1:numSheep
-        temp = [directions(s,x) directions(s,y)];
+    for s = 1:20
+        temp = [directionsFillUp(s,x) directionsFillUp(s,y)];
         norms(s) = norm(temp);
         if (norms(s) > furthestNorm)
             furthestNorm = norms(s);
@@ -75,7 +126,7 @@ for timesteps = 1:1000
     backOfFlock(y) = (GCMNeural(y)*scalingFactorBackofFlock);
     backOfFlockReshaped = reshape(backOfFlock,[2,1]);  
     drivingInput = [GCMNeuralReshaped;backOfFlockReshaped];
-    furthestSheepCoords = [sheepMatrix(furthestIndex,1) sheepMatrix(furthestIndex,2)];
+    furthestSheepCoords = [fillUpSheepMatrix(furthestIndex,x) fillUpSheepMatrix(furthestIndex,y)];
     furthestSheepReshaped = reshape(furthestSheepCoords,[2,1]);
     isClusteredInput = [GCMNeuralReshaped;furthestSheepReshaped];
     collectingInput = [GCMNeuralReshaped;furthestSheepReshaped];
@@ -85,13 +136,13 @@ for timesteps = 1:1000
     % ensure this is a logical
     isClusteredNeural = round(isClusteredRaw);
     [collectingPosNeural,nil1,nil2] = collectingPosNetwork(collectingInput,x,y);
-    collectingPosNeural = reshape(collectingPosNeural,[1,2]);
+    collectngPosNeural = reshape(collectingPosNeural,[1,2]);
     
     [drivingPosNeural,nil1,nil2] = drivingPosNetwork(drivingInput,x,y);
     drivingPosNeural = reshape(drivingPosNeural,[1,2]);
+    
     % recalculate new positions of each sheep and the shepherd based on
     % their various radii and vectors related to each other
-    
     % for each sheep that we have
     for s = 1:numSheep
         % reset the vector forces to zero for this sheep
@@ -150,6 +201,54 @@ for timesteps = 1:1000
             end
         end
     end
+    % this whole set of code must be repeated to keep track of where each
+    % fill up sheep is
+    if numSheep == 20
+        fillUpSheepMatrix = sheepMatrix;
+    else
+        % if less than 20, we do this by filling the extra spots with averages
+        % of all the other sheep positions
+        if numSheep < 20
+            meanX = mean(sheepMatrix(:,x));
+            meanY = mean(sheepMatrix(:,y));
+            for i = 1:numSheep
+                fillUpSheepMatrix(i,x) = sheepMatrix(i,x);
+                fillUpSheepMatrix(i,y) = sheepMatrix(i,y);
+            end
+            for i = (numSheep + 1):20
+                fillUpSheepMatrix(i,x) = meanX;
+                fillUpSheepMatrix(i,y) = meanY;
+            end
+        % otherwise if we have more than 20, then
+        else
+            % check up to 400 sheep (this is a lot but just to be safe) - we
+            % don't check 1 because that is less than 20
+            for a = 2:20
+                if numSheep < a*20
+                    sheepUpperLimit = a;
+                    break;
+                end
+            end
+            % we now have the upper limit in multiples of 20 for the number of
+            % sheep
+            % if numSheep is 38, this will go for i = 1:18
+            for i = 1:(numSheep-(sheepUpperLimit-1)*20)
+                % collect the multiples together
+                for b = 0:(sheepUpperLimit-1)
+                    tempSheepPosition((b+1),x) = sheepMatrix((i+b*20),x);
+                    tempSheepPosition((b+1),y) = sheepMatrix((i+b*20),y);
+                end
+                % those values averaged become the filled up index values
+                fillUpSheepMatrix(i,x) = mean(tempSheepPosition(:,x));
+                fillUpSheepMatrix(i,y) = mean(tempSheepPosition(:,y));
+            end
+            % and the rest are just single values added in
+            for i = (numSheep-(sheepUpperLimit-1)*20+1):20
+                fillUpSheepMatrix(i,x) = sheepMatrix(i,x);
+                fillUpSheepMatrix(i,y) = sheepMatrix(i,y);
+            end
+        end
+    end
     % we now give the shepherd its new position
     % first, we determine if the shepherd must pause for this time step
     % because it is too close to a sheep
@@ -199,16 +298,17 @@ for timesteps = 1:1000
 %     hold on; scatter(collectingPosNeural(x),collectingPosNeural(y),circleSize,'filled','MarkerFaceColor',[0.2 0.8 0.2]);
 %     hold on; scatter(drivingPosNeural(x),drivingPosNeural(y),circleSize,'filled','r');
 %     hold on; scatter(sheepMatrix(:,x),sheepMatrix(:,y),circleSize,'filled','MarkerFaceColor',[0.2 0.2 0.9]);
+%     xlim([-100 100+width]); ylim([-100 100+height]);
 %     legend('shepherd','collecting position','driving position','sheep positions');
-%     xlim([-100 100+width]); ylim([-50 150+height]);
 %     F(timesteps) = getframe(gcf);
     % if the shepherd is close enough to the goal, then we stop
     if norm([shepherdPos(x) shepherdPos(y)]) < 20 & norm([drivingPosNeural(x) drivingPosNeural(y)]) < 20
+        % disp(timesteps);
         break;
     end
 end
 % % create the video writer with 1 fps
-% writerObj = VideoWriter('arena300.avi');
+% writerObj = VideoWriter('changingNumbersSuperHigh.avi');
 % writerObj.FrameRate = 10;
 % % open the video writercollectingPosNeural
 % open(writerObj);
@@ -219,4 +319,3 @@ end
 %     writeVideo(writerObj, frame);
 % end
 % % close the writer object
-% close(writerObj);

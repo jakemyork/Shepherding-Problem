@@ -1,7 +1,7 @@
 %% This section does all calculation of initial conditions of the simulation
 
-height = 150; % height of arena (y-axis)
-width = 150; % width of arena (x-axis)
+% height = 150; % height of arena (y-axis)
+% width = 150; % width of arena (x-axis)
 x = 1; % easy for row indexing
 y = 2;
 numSheep = 20; % the number of sheep being simulated
